@@ -29,7 +29,7 @@ OrionLib:MakeNotification({
 main:AddButton({
     Name = "Sair",
     Callback = function()
-        game.Players.LocalPlayer:Kick("Você foi desconectado!")
+        game.Players.LocalPlayer:Kick("Você foi Banido desta experiencia!\nMotivo: Exploiter")
     end
 })
 
@@ -394,7 +394,112 @@ scripts:AddButton({
     end
 })
 
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+
+local LocalPlayer = Players.LocalPlayer
+
+-- Estado
+local baseWalkSpeed = nil
+local currentSpeedValue = 0
+local humanoid = nil
+local character = nil
+
+-- Tenta forçar velocidade usando diferentes métodos
+local function forceSpeed(h, value)
+    if not h then return end
+
+    -- Método tradicional
+    pcall(function()
+        h.WalkSpeed = value
+    end)
+
+    -- Tentativa por atributo (alguns jogos controlam via atributos)
+    pcall(function()
+        if h:GetAttribute("WalkSpeed") then
+            h:SetAttribute("WalkSpeed", value)
+        end
+    end)
+
+    -- Se o HumanoidRootPart estiver presente, tenta forçar movimentação
+    local root = h.Parent and h.Parent:FindFirstChild("HumanoidRootPart")
+    if root then
+        pcall(function()
+            if root.Velocity.Magnitude < 2 then
+                root.Velocity = root.CFrame.LookVector * value
+            end
+        end)
+    end
+end
+
+-- Função principal para aplicar velocidade segura
+local function applySpeed()
+    if not character then return end
+    if not humanoid then return end
+
+    -- Pega a base uma vez
+    if not baseWalkSpeed then
+        baseWalkSpeed = humanoid.WalkSpeed
+    end
+
+    local finalSpeed = baseWalkSpeed + currentSpeedValue
+    forceSpeed(humanoid, finalSpeed)
+end
+
+-- Quando o personagem muda
+local function onCharacterAdded(char)
+    character = char
+    baseWalkSpeed = nil
+    humanoid = nil
+
+    -- Espera até o Humanoid aparecer
+    local try = 0
+    while try < 20 do
+        try += 1
+        humanoid = char:FindFirstChildOfClass("Humanoid")
+        if humanoid then break end
+        task.wait(0.2)
+    end
+
+    -- Aplica a velocidade
+    if humanoid then
+        applySpeed()
+    end
+end
+
+-- Detecta troca de personagem
+LocalPlayer.CharacterAdded:Connect(onCharacterAdded)
+if LocalPlayer.Character then
+    onCharacterAdded(LocalPlayer.Character)
+end
+
+-- Monitora a cada frame se precisa reaplicar
+RunService.RenderStepped:Connect(function()
+    if character and humanoid then
+        local expected = baseWalkSpeed + currentSpeedValue
+        if humanoid.WalkSpeed ~= expected then
+            applySpeed()
+        end
+    end
+end)
+
+-- Cria o slider
+scripts:AddSlider({
+    Name = "🏃 Velocidade Extra",
+    Min = 0,
+    Max = 600,
+    Default = 0,
+    Save = true,
+    Flag = "speed_slider",
+    Callback = function(value)
+        currentSpeedValue = value
+        applySpeed()
+    end
+})
+
+
 -- Aimbot hub
+-- Função principal do Aimbot
 local function LoadAimbot()
     local Vector2new, CFramenew, Color3fromRGB, Drawingnew =
         Vector2.new, CFrame.new, Color3.fromRGB, Drawing.new
@@ -404,12 +509,11 @@ local function LoadAimbot()
     local LocalPlayer = Players.LocalPlayer
     local Camera = workspace.CurrentCamera
 
-    -- Distância em pixels da tela (raio da mira)
     local RequiredRadius = 150
     local Running = false
-    local Compensation = 0 -- Valor de compensação (0 = desligado)
+    local FilterEnemiesOnly = false
+    local Compensation = 0
 
-    -- Criação da mira (círculo)
     local Circle = Drawingnew("Circle")
     Circle.Transparency = 1
     Circle.Thickness = 2
@@ -418,30 +522,29 @@ local function LoadAimbot()
     Circle.Visible = false
     Circle.Radius = RequiredRadius
 
-    -- Atualiza posição do círculo
     RunService.RenderStepped:Connect(function()
-        local viewportSize = Camera.ViewportSize
-        Circle.Position = Vector2new(viewportSize.X / 2, viewportSize.Y / 2)
+        Circle.Position = Vector2new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2)
         Circle.Radius = RequiredRadius
     end)
 
-    -- Verifica se o alvo está dentro da mira
     local function IsInCircle(worldPosition)
         local screenPoint, onScreen = Camera:WorldToViewportPoint(worldPosition)
         if not onScreen then return false end
-
         local center = Vector2new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2)
         local distance = (Vector2new(screenPoint.X, screenPoint.Y) - center).Magnitude
         return distance <= RequiredRadius
     end
 
-    -- Encontra o jogador mais próximo dentro da mira
     local function GetClosestPlayer()
         local closestPlayer = nil
         local closestDistance = math.huge
 
         for _, player in ipairs(Players:GetPlayers()) do
             if player ~= LocalPlayer and player.Character then
+                if FilterEnemiesOnly and player.Team == LocalPlayer.Team then
+                    continue
+                end
+
                 local head = player.Character:FindFirstChild("Head")
                 if head and IsInCircle(head.Position) then
                     local distance = (Camera.CFrame.Position - head.Position).Magnitude
@@ -456,13 +559,10 @@ local function LoadAimbot()
         return closestPlayer
     end
 
-    -- Aplica compensação na mira (ajuste vertical)
-    local function ApplyCompensation(targetPosition)
-        local compensationAmount = Compensation * 0.1 -- Ajuste a escala da compensação aqui
-        return Vector3.new(targetPosition.X, targetPosition.Y + compensationAmount, targetPosition.Z)
+    local function ApplyCompensation(pos)
+        return Vector3.new(pos.X, pos.Y + Compensation * 0.1, pos.Z)
     end
 
-    -- Loop principal do Aimbot
     RunService.RenderStepped:Connect(function()
         if not Running then return end
 
@@ -470,10 +570,8 @@ local function LoadAimbot()
         if target and target.Character then
             local head = target.Character:FindFirstChild("Head")
             if head then
-                local targetPosition = head.Position
-                -- Aplica compensação, se ativada
-                targetPosition = ApplyCompensation(targetPosition)
-                Camera.CFrame = CFramenew(Camera.CFrame.Position, targetPosition)
+                local aimPos = ApplyCompensation(head.Position)
+                Camera.CFrame = CFramenew(Camera.CFrame.Position, aimPos)
             end
         end
     end)
@@ -487,11 +585,14 @@ local function LoadAimbot()
             Running = false
             Circle.Visible = false
         end,
-        SetRadius = function(value)
-            RequiredRadius = value
+        SetRadius = function(val)
+            RequiredRadius = val
         end,
-        SetCompensation = function(value)
-            Compensation = value
+        SetCompensation = function(val)
+            Compensation = val
+        end,
+        EnableEnemyOnly = function(val)
+            FilterEnemiesOnly = val
         end
     }
 end
@@ -499,14 +600,14 @@ end
 -- Instancia o Aimbot
 local aimbot = LoadAimbot()
 
--- Botão para ativar/desativar o AimBot
+-- Toggle: Ativar Aimbot
 scripts:AddToggle({
-    Name = "Ativar AimBot",
+    Name = "🎯 Ativar Aimbot",
     Default = false,
     Save = true,
     Flag = "aimbot_toggle",
-    Callback = function(State)
-        if State then
+    Callback = function(state)
+        if state then
             aimbot.Start()
         else
             aimbot.Stop()
@@ -514,9 +615,20 @@ scripts:AddToggle({
     end
 })
 
--- Slider para definir o tamanho do raio da mira
+-- Toggle: Só mirar em inimigos
+scripts:AddToggle({
+    Name = "🔒 Aimbot só em inimigos",
+    Default = true,
+    Save = true,
+    Flag = "aimbot_enemyonly_toggle",
+    Callback = function(state)
+        aimbot.EnableEnemyOnly(state)
+    end
+})
+
+-- Slider: Tamanho da Mira
 scripts:AddSlider({
-    Name = "Tamanho da Mira",
+    Name = "📏 Tamanho da Mira",
     Min = 20,
     Max = 500,
     Default = 150,
@@ -527,9 +639,9 @@ scripts:AddSlider({
     end
 })
 
--- Slider para definir o valor da compensação
+-- Slider: Compensação Vertical
 scripts:AddSlider({
-    Name = "Compensação da Mira",
+    Name = "📐 Compensação Vertical",
     Min = 0,
     Max = 100,
     Default = 0,
@@ -641,7 +753,6 @@ if game.PlaceId == 4924922222 then
     })
 end
 
--- TELEPORTE Players
 -- TELEPORTE Players (otimizado)
 local teleportTarget = nil
 local dropdownObject = nil
