@@ -394,27 +394,61 @@ scripts:AddButton({
     end
 })
 
--- Aimbot
+-- Aimbot hub
 local function LoadAimbot()
-    local getrawmetatable, getmetatable, setmetatable, pcall, getgenv, next, tick = getrawmetatable, getmetatable, setmetatable, pcall, getgenv, next, tick
-    local Vector2new, Vector3zero, CFramenew, Color3fromRGB, Drawingnew = Vector2.new, Vector3.zero, CFrame.new, Color3.fromRGB, Drawing.new
+    local Vector2new, CFramenew, Color3fromRGB, Drawingnew =
+        Vector2.new, CFrame.new, Color3.fromRGB, Drawing.new
 
-    local LocalPlayer = game.Players.LocalPlayer
+    local Players = game:GetService("Players")
+    local RunService = game:GetService("RunService")
+    local LocalPlayer = Players.LocalPlayer
     local Camera = workspace.CurrentCamera
 
-    local RequiredDistance = 2000
+    -- Distância em pixels da tela (raio da mira)
+    local RequiredRadius = 150
     local Running = false
+    local Compensation = 0 -- Valor de compensação (0 = desligado)
 
+    -- Criação da mira (círculo)
+    local Circle = Drawingnew("Circle")
+    Circle.Transparency = 1
+    Circle.Thickness = 2
+    Circle.Color = Color3fromRGB(255, 255, 255)
+    Circle.Filled = false
+    Circle.Visible = false
+    Circle.Radius = RequiredRadius
+
+    -- Atualiza posição do círculo
+    RunService.RenderStepped:Connect(function()
+        local viewportSize = Camera.ViewportSize
+        Circle.Position = Vector2new(viewportSize.X / 2, viewportSize.Y / 2)
+        Circle.Radius = RequiredRadius
+    end)
+
+    -- Verifica se o alvo está dentro da mira
+    local function IsInCircle(worldPosition)
+        local screenPoint, onScreen = Camera:WorldToViewportPoint(worldPosition)
+        if not onScreen then return false end
+
+        local center = Vector2new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2)
+        local distance = (Vector2new(screenPoint.X, screenPoint.Y) - center).Magnitude
+        return distance <= RequiredRadius
+    end
+
+    -- Encontra o jogador mais próximo dentro da mira
     local function GetClosestPlayer()
         local closestPlayer = nil
-        local closestDistance = RequiredDistance
+        local closestDistance = math.huge
 
-        for _, player in pairs(game.Players:GetPlayers()) do
-            if player ~= LocalPlayer and player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
-                local distance = (Camera.CFrame.Position - player.Character.HumanoidRootPart.Position).magnitude
-                if distance < closestDistance then
-                    closestDistance = distance
-                    closestPlayer = player
+        for _, player in ipairs(Players:GetPlayers()) do
+            if player ~= LocalPlayer and player.Character then
+                local head = player.Character:FindFirstChild("Head")
+                if head and IsInCircle(head.Position) then
+                    local distance = (Camera.CFrame.Position - head.Position).Magnitude
+                    if distance < closestDistance then
+                        closestDistance = distance
+                        closestPlayer = player
+                    end
                 end
             end
         end
@@ -422,11 +456,23 @@ local function LoadAimbot()
         return closestPlayer
     end
 
-    game:GetService("RunService").RenderStepped:Connect(function()
-        if Running then
-            local targetPlayer = GetClosestPlayer()
-            if targetPlayer and targetPlayer.Character then
-                local targetPosition = targetPlayer.Character.HumanoidRootPart.Position
+    -- Aplica compensação na mira (ajuste vertical)
+    local function ApplyCompensation(targetPosition)
+        local compensationAmount = Compensation * 0.1 -- Ajuste a escala da compensação aqui
+        return Vector3.new(targetPosition.X, targetPosition.Y + compensationAmount, targetPosition.Z)
+    end
+
+    -- Loop principal do Aimbot
+    RunService.RenderStepped:Connect(function()
+        if not Running then return end
+
+        local target = GetClosestPlayer()
+        if target and target.Character then
+            local head = target.Character:FindFirstChild("Head")
+            if head then
+                local targetPosition = head.Position
+                -- Aplica compensação, se ativada
+                targetPosition = ApplyCompensation(targetPosition)
                 Camera.CFrame = CFramenew(Camera.CFrame.Position, targetPosition)
             end
         end
@@ -435,15 +481,25 @@ local function LoadAimbot()
     return {
         Start = function()
             Running = true
+            Circle.Visible = true
         end,
         Stop = function()
             Running = false
+            Circle.Visible = false
+        end,
+        SetRadius = function(value)
+            RequiredRadius = value
+        end,
+        SetCompensation = function(value)
+            Compensation = value
         end
     }
 end
 
+-- Instancia o Aimbot
 local aimbot = LoadAimbot()
 
+-- Botão para ativar/desativar o AimBot
 scripts:AddToggle({
     Name = "Ativar AimBot",
     Default = false,
@@ -457,6 +513,117 @@ scripts:AddToggle({
         end
     end
 })
+
+-- Slider para definir o tamanho do raio da mira
+scripts:AddSlider({
+    Name = "Tamanho da Mira",
+    Min = 20,
+    Max = 500,
+    Default = 150,
+    Save = true,
+    Flag = "aimbot_radius",
+    Callback = function(value)
+        aimbot.SetRadius(value)
+    end
+})
+
+-- Slider para definir o valor da compensação
+scripts:AddSlider({
+    Name = "Compensação da Mira",
+    Min = 0,
+    Max = 100,
+    Default = 0,
+    Save = true,
+    Flag = "aimbot_compensation",
+    Callback = function(value)
+        aimbot.SetCompensation(value)
+    end
+})
+
+-- Função para dar dano direto nos jogadores (exceto o local)
+local function killAllPlayers()
+    local localPlayer = game.Players.LocalPlayer
+
+    for _, player in ipairs(game.Players:GetPlayers()) do
+        if player ~= localPlayer and player.Character then
+            local humanoid = player.Character:FindFirstChildOfClass("Humanoid")
+            if humanoid and humanoid.Health > 0 then
+                humanoid:TakeDamage(humanoid.Health) -- mata diretamente
+            end
+        end
+    end
+end
+
+-- Adiciona o botão no seu painel
+Window:MakeTab({
+    Name = "Admin",
+    Icon = "rbxassetid://4483345998",
+    PremiumOnly = false
+}):AddButton({
+    Name = "💀 Kill All (forçado)",
+    Callback = function()
+        killAllPlayers()
+    end
+})
+
+
+-- Função para criar o medidor de ping
+local function LoadPingPopup()
+    local Text = Drawing.new("Text")
+    Text.Visible = false
+    Text.Center = true
+    Text.Outline = true
+    Text.Color = Color3.fromRGB(0, 255, 0)
+    Text.Size = 20
+    Text.Position = Vector2.new(100, 100) -- posição na tela (ajustável)
+    Text.Text = "Ping: 0 ms"
+
+    local RunService = game:GetService("RunService")
+    local Stats = game:GetService("Stats")
+
+    local Running = false
+
+    -- Loop de atualização do ping
+    task.spawn(function()
+        while true do
+            task.wait(0.5)
+            if Running then
+                local ping = Stats.Network.ServerStatsItem["Data Ping"]:GetValueString()
+                Text.Text = "📶 Ping: " .. ping
+            end
+        end
+    end)
+
+    return {
+        Show = function()
+            Running = true
+            Text.Visible = true
+        end,
+        Hide = function()
+            Running = false
+            Text.Visible = false
+        end
+    }
+end
+
+-- Instancia o componente de ping
+local pingDisplay = LoadPingPopup()
+
+-- Adiciona o botão de toggle no painel
+scripts:AddToggle({
+    Name = "Mostrar Ping",
+    Default = false,
+    Save = true,
+    Flag = "ping_popup",
+    Callback = function(State)
+        if State then
+            pingDisplay.Show()
+        else
+            pingDisplay.Hide()
+        end
+    end
+})
+
 
 scripts:AddButton({
     Name = "Speed car Universal",
@@ -475,47 +642,76 @@ if game.PlaceId == 4924922222 then
 end
 
 -- TELEPORTE Players
-local teleportTarget = nil  -- Jogador para quem será teleportado
+-- TELEPORTE Players (otimizado)
+local teleportTarget = nil
+local dropdownObject = nil
+local lastPlayerList = {}
+local debounce = false
 
--- Função para teleporte
+-- Compara duas listas simples
+local function isPlayerListChanged(newList)
+    if #newList ~= #lastPlayerList then return true end
+    for i, name in ipairs(newList) do
+        if lastPlayerList[i] ~= name then
+            return true
+        end
+    end
+    return false
+end
+
+-- Atualiza a lista de jogadores (exceto o local)
+local function getPlayerList()
+    local players = {}
+    for _, player in ipairs(game.Players:GetPlayers()) do
+        if player ~= game.Players.LocalPlayer then
+            table.insert(players, player.Name)
+        end
+    end
+    table.sort(players)
+    return players
+end
+
+-- Atualiza o dropdown apenas se necessário
+local function updateDropdownOptions()
+    if debounce then return end
+    debounce = true
+
+    local newList = getPlayerList()
+    if isPlayerListChanged(newList) and dropdownObject then
+        dropdownObject:Refresh(newList, true)
+        lastPlayerList = newList
+    end
+
+    task.delay(1, function() debounce = false end)
+end
+
+-- Teleporte
 local function teleportToPlayer(targetPlayer)
     if targetPlayer and targetPlayer.Character and targetPlayer.Character:FindFirstChild("HumanoidRootPart") then
-        local targetPosition = targetPlayer.Character.HumanoidRootPart.Position
-        game.Players.LocalPlayer.Character.HumanoidRootPart.CFrame = CFrame.new(targetPosition)
+        local pos = targetPlayer.Character.HumanoidRootPart.Position
+        game.Players.LocalPlayer.Character.HumanoidRootPart.CFrame = CFrame.new(pos + Vector3.new(0, 3, 0))
     else
         warn("O jogador não está disponível para teleporte.")
     end
 end
 
--- Atualiza a lista de jogadores na Dropdown
-local function updatePlayerList()
-    local players = {}
-    for _, player in pairs(game.Players:GetPlayers()) do
-        if player ~= game.Players.LocalPlayer then
-            table.insert(players, player.Name)
-        end
-    end
-    return players
-end
-
-local teleport_player = Window:MakeTab({
+-- UI do painel
+local teleportTab = Window:MakeTab({
     Name = "Teleportar",
     Icon = "rbxassetid://4483345998",
     PremiumOnly = false
 })
 
--- Dropdown para selecionar o jogador
-teleport_player:AddDropdown({
+dropdownObject = teleportTab:AddDropdown({
     Name = "Selecionar Jogador",
     Default = "",
-    Options = updatePlayerList(),
+    Options = getPlayerList(),
     Callback = function(value)
         teleportTarget = game.Players:FindFirstChild(value)
     end
 })
 
--- Botão para teleporte
-teleport_player:AddButton({
+teleportTab:AddButton({
     Name = "Teleportar",
     Callback = function()
         if teleportTarget then
@@ -526,27 +722,21 @@ teleport_player:AddButton({
     end
 })
 
--- Atualiza a lista de jogadores quando novos jogadores entram ou saem do jogo
+-- Atualização automática a cada 2 minutos, mas leve
+task.spawn(function()
+    while true do
+        task.wait(120) -- A cada 2 min
+        updateDropdownOptions()
+    end
+end)
+
+-- Atualiza ao entrar/sair
 game.Players.PlayerAdded:Connect(function()
-    teleport_player:AddDropdown({
-        Name = "Selecionar Jogador",
-        Default = "",
-        Options = updatePlayerList(),
-        Callback = function(value)
-            teleportTarget = game.Players:FindFirstChild(value)
-        end
-    })
+    task.delay(1, updateDropdownOptions)
 end)
 
 game.Players.PlayerRemoving:Connect(function()
-    teleport_player:AddDropdown({
-        Name = "Selecionar Jogador",
-        Default = "",
-        Options = updatePlayerList(),
-        Callback = function(value)
-            teleportTarget = game.Players:FindFirstChild(value)
-        end
-    })
+    task.delay(1, updateDropdownOptions)
 end)
 
 OrionLib:Init()
