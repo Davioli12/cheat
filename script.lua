@@ -652,33 +652,6 @@ scripts:AddSlider({
     end
 })
 
--- Função para dar dano direto nos jogadores (exceto o local)
-local function killAllPlayers()
-    local localPlayer = game.Players.LocalPlayer
-
-    for _, player in ipairs(game.Players:GetPlayers()) do
-        if player ~= localPlayer and player.Character then
-            local humanoid = player.Character:FindFirstChildOfClass("Humanoid")
-            if humanoid and humanoid.Health > 0 then
-                humanoid:TakeDamage(humanoid.Health) -- mata diretamente
-            end
-        end
-    end
-end
-
--- Adiciona o botão no seu painel
-Window:MakeTab({
-    Name = "Admin",
-    Icon = "rbxassetid://4483345998",
-    PremiumOnly = false
-}):AddButton({
-    Name = "💀 Kill All (forçado)",
-    Callback = function()
-        killAllPlayers()
-    end
-})
-
-
 -- Função para criar o medidor de ping
 local function LoadPingPopup()
     local Text = Drawing.new("Text")
@@ -752,6 +725,92 @@ if game.PlaceId == 4924922222 then
         end
     })
 end
+
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+
+local LocalPlayer = Players.LocalPlayer
+local character = nil
+local humanoid = nil
+local godmodeEnabled = true -- fica ligado sempre que ativado
+
+-- Valor padrão de vida (muito alto, praticamente imortal)
+local GOD_HEALTH = 1e6
+
+-- Função para aplicar godmode no humanoid
+local function applyGodmode()
+    if not humanoid then return end
+
+    -- Impede que morra
+    pcall(function()
+        humanoid:SetStateEnabled(Enum.HumanoidStateType.Dead, false)
+    end)
+
+    -- Vida absurdamente alta
+    pcall(function()
+        humanoid.MaxHealth = GOD_HEALTH
+        humanoid.Health = GOD_HEALTH
+    end)
+
+    -- Se a vida mudar, forçar de volta
+    humanoid:GetPropertyChangedSignal("Health"):Connect(function()
+        if godmodeEnabled and humanoid.Health < GOD_HEALTH then
+            humanoid.Health = GOD_HEALTH
+        end
+    end)
+end
+
+-- Quando o personagem troca
+local function onCharacterAdded(char)
+    character = char
+    humanoid = nil
+
+    local try = 0
+    repeat
+        humanoid = char:FindFirstChildOfClass("Humanoid")
+        try += 1
+        task.wait(0.2)
+    until humanoid or try > 25
+
+    if humanoid then
+        applyGodmode()
+    end
+end
+
+-- Detecta nova aparição do personagem
+LocalPlayer.CharacterAdded:Connect(onCharacterAdded)
+if LocalPlayer.Character then
+    onCharacterAdded(LocalPlayer.Character)
+end
+
+-- Reforça o godmode a cada frame
+RunService.RenderStepped:Connect(function()
+    if godmodeEnabled and humanoid then
+        if humanoid.Health < GOD_HEALTH then
+            humanoid.Health = GOD_HEALTH
+        end
+    end
+end)
+
+-- Toggle no painel admin
+scripts:AddToggle({
+    Name = "🛡️ GodMode (Imortal)",
+    Default = true,
+    Save = true,
+    Flag = "godmode_toggle",
+    Callback = function(state)
+        godmodeEnabled = state
+        if state and humanoid then
+            applyGodmode()
+        elseif not state and humanoid then
+            -- Desativa godmode, volta ao normal
+            humanoid:SetStateEnabled(Enum.HumanoidStateType.Dead, true)
+            humanoid.MaxHealth = 100
+            humanoid.Health = 100
+        end
+    end
+})
+
 
 -- TELEPORTE Players (otimizado)
 local teleportTarget = nil
