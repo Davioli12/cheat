@@ -1,6 +1,6 @@
 local OrionLib = loadstring(game:HttpGet(('https://raw.githubusercontent.com/jensonhirst/Orion/main/source')))()
 
-local Window = OrionLib:MakeWindow({Name = "Cheat game", HidePremium = false, SaveConfig = true, ConfigFolder = "savecheat", IntroEnabled=false})
+local Window = OrionLib:MakeWindow({Name = "Cheat game", HidePremium = false, SaveConfig = false, ConfigFolder = "savecheat", IntroEnabled=false})
 
 local passcheat = 0
 
@@ -15,6 +15,13 @@ local scripts = Window:MakeTab({
     Icon = "rbxassetid://4483345998",
     PremiumOnly = false
 })
+
+local vehicleTab = Window:MakeTab({
+    Name = "Veículo",
+    Icon = "rbxassetid://4483345998",
+    PremiumOnly = false
+})
+
 
 local Section = main:AddSection({
     Name = "Section"
@@ -39,6 +46,30 @@ main:AddButton({
         OrionLib:Destroy()
     end
 })
+
+local player = game.Players.LocalPlayer
+
+local function rejoin()
+    local teleportService = game:GetService("TeleportService")
+    local placeId = game.PlaceId
+    local jobId = game.JobId
+
+    teleportService:TeleportToPlaceInstance(placeId, jobId, player)
+end
+
+-- Example: Call the function when a button is clicked
+-- Uncomment the line below to test it manually
+-- rejoin()
+-- Botão no OrionLib para ativar/desativar o Fly
+main:AddButton({
+    Name = "Re-entrar",
+    Save = true,
+    Callback = function()
+        rejoin()
+    end
+})
+
+
 
 -- Fly melhorado para PC e Mobile
 local player = game.Players.LocalPlayer
@@ -394,106 +425,120 @@ scripts:AddButton({
     end
 })
 
+local speedSection = vehicleTab:AddSection({Name="Aceleração"})
+
+-- Variáveis
 local Players = game:GetService("Players")
-local RunService = game:GetService("RunService")
-
+local UserInputService = game:GetService("UserInputService")
 local LocalPlayer = Players.LocalPlayer
+local velocityMult = 0.025
+local velocityEnabled = true
+local turboKeyCode = Enum.KeyCode.F
 
--- Estado
-local baseWalkSpeed = nil
-local currentSpeedValue = 0
-local humanoid = nil
-local character = nil
-
--- Tenta forçar velocidade usando diferentes métodos
-local function forceSpeed(h, value)
-    if not h then return end
-
-    -- Método tradicional
-    pcall(function()
-        h.WalkSpeed = value
-    end)
-
-    -- Tentativa por atributo (alguns jogos controlam via atributos)
-    pcall(function()
-        if h:GetAttribute("WalkSpeed") then
-            h:SetAttribute("WalkSpeed", value)
-        end
-    end)
-
-    -- Se o HumanoidRootPart estiver presente, tenta forçar movimentação
-    local root = h.Parent and h.Parent:FindFirstChild("HumanoidRootPart")
-    if root then
-        pcall(function()
-            if root.Velocity.Magnitude < 2 then
-                root.Velocity = root.CFrame.LookVector * value
-            end
-        end)
-    end
-end
-
--- Função principal para aplicar velocidade segura
-local function applySpeed()
-    if not character then return end
-    if not humanoid then return end
-
-    -- Pega a base uma vez
-    if not baseWalkSpeed then
-        baseWalkSpeed = humanoid.WalkSpeed
-    end
-
-    local finalSpeed = baseWalkSpeed + currentSpeedValue
-    forceSpeed(humanoid, finalSpeed)
-end
-
--- Quando o personagem muda
-local function onCharacterAdded(char)
-    character = char
-    baseWalkSpeed = nil
-    humanoid = nil
-
-    -- Espera até o Humanoid aparecer
-    local try = 0
-    while try < 20 do
-        try += 1
-        humanoid = char:FindFirstChildOfClass("Humanoid")
-        if humanoid then break end
-        task.wait(0.2)
-    end
-
-    -- Aplica a velocidade
-    if humanoid then
-        applySpeed()
-    end
-end
-
--- Detecta troca de personagem
-LocalPlayer.CharacterAdded:Connect(onCharacterAdded)
-if LocalPlayer.Character then
-    onCharacterAdded(LocalPlayer.Character)
-end
-
--- Monitora a cada frame se precisa reaplicar
-RunService.RenderStepped:Connect(function()
-    if character and humanoid then
-        local expected = baseWalkSpeed + currentSpeedValue
-        if humanoid.WalkSpeed ~= expected then
-            applySpeed()
-        end
-    end
-end)
-
--- Cria o slider
-scripts:AddSlider({
-    Name = "🏃 Velocidade Extra",
+-- Slider
+vehicleTab:AddSlider({
+    Name = "Multiplicador (milésimos)",
     Min = 0,
-    Max = 600,
-    Default = 0,
-    Save = true,
-    Flag = "speed_slider",
+    Max = 50,
+    Default = 25,
+    Increment = 1,
+    Callback = function(v)
+        velocityMult = v / 1000
+    end
+})
+
+-- Toggle
+vehicleTab:AddToggle({
+    Name = "Turbo Ativado",
+    Default = true,
+    Callback = function(v)
+        velocityEnabled = v
+    end
+})
+
+-- Keybind
+vehicleTab:AddBind({
+    Name = "Ativar Turbo",
+    Default = turboKeyCode,
+    Hold = true,
+    Callback = function()
+        if not velocityEnabled then return end
+        while UserInputService:IsKeyDown(turboKeyCode) do
+            task.wait()
+
+            local Character = LocalPlayer.Character
+            if not Character then continue end
+
+            local Humanoid = Character:FindFirstChildWhichIsA("Humanoid")
+            if not Humanoid then continue end
+
+            local Seat = Humanoid.SeatPart
+            local Root = Character:FindFirstChild("HumanoidRootPart")
+
+            -- VehicleSeat
+            if Seat and Seat:IsA("VehicleSeat") then
+                Seat.AssemblyLinearVelocity *= Vector3.new(1 + velocityMult, 1, 1 + velocityMult)
+            end
+
+            -- BodyVelocity, VectorForce, LinearVelocity
+            if Root then
+                local bv = Root:FindFirstChildWhichIsA("BodyVelocity", true)
+                if bv then
+                    bv.Velocity *= (1 + velocityMult)
+                end
+
+                local vf = Root:FindFirstChildWhichIsA("VectorForce", true)
+                if vf then
+                    vf.Force *= (1 + velocityMult)
+                end
+
+                local lv = Root:FindFirstChildWhichIsA("LinearVelocity", true)
+                if lv then
+                    lv.VectorVelocity *= (1 + velocityMult)
+                end
+            end
+
+            if not velocityEnabled then break end
+        end
+    end
+})
+
+-- Slider para controlar força
+scripts:AddSlider({
+    Name = "⚙️ Multiplicador Turbo",
+    Min = 1,
+    Max = 100,
+    Default = 2,
+    Increment = 0.1,
+    Flag = "turbo_slider",
     Callback = function(value)
-        currentSpeedValue = value
-        applySpeed()
+        turboMultiplier = value
+    end
+})
+
+-- Toggle para ativar/desativar o turbo
+scripts:AddToggle({
+    Name = "🚀 Turbo Ativado",
+    Default = true,
+    Save = true,
+    Flag = "turbo_toggle",
+    Callback = function(state)
+        turboEnabled = state
+        if not state then
+            -- Resetar valores se desligar turbo
+            if currentSeat and originalTorque then
+                currentSeat.Torque = originalTorque
+            end
+            if bodyVelocity and originalVelocity then
+                bodyVelocity.Velocity = originalVelocity
+            end
+            if vectorForce and originalForce then
+                vectorForce.Force = originalForce
+            end
+            if linearVelocity and originalLV then
+                linearVelocity.VectorVelocity = originalLV
+            end
+        end
     end
 })
 
@@ -732,12 +777,12 @@ local RunService = game:GetService("RunService")
 local LocalPlayer = Players.LocalPlayer
 local character = nil
 local humanoid = nil
-local godmodeEnabled = true -- fica ligado sempre que ativado
+local godmodeEnabled = true -- ativado por padrão
+local healthListenerConnected = false -- evita múltiplos listeners
 
--- Valor padrão de vida (muito alto, praticamente imortal)
 local GOD_HEALTH = 1e6
 
--- Função para aplicar godmode no humanoid
+-- Função para aplicar godmode
 local function applyGodmode()
     if not humanoid then return end
 
@@ -746,24 +791,51 @@ local function applyGodmode()
         humanoid:SetStateEnabled(Enum.HumanoidStateType.Dead, false)
     end)
 
-    -- Vida absurdamente alta
+    -- Define MaxHealth e aguarda para setar Health corretamente
     pcall(function()
         humanoid.MaxHealth = GOD_HEALTH
-        humanoid.Health = GOD_HEALTH
+        task.delay(0.05, function() -- aguarda um pequeno intervalo
+            if humanoid and godmodeEnabled then
+                humanoid.Health = GOD_HEALTH
+            end
+        end)
     end)
 
-    -- Se a vida mudar, forçar de volta
-    humanoid:GetPropertyChangedSignal("Health"):Connect(function()
-        if godmodeEnabled and humanoid.Health < GOD_HEALTH then
-            humanoid.Health = GOD_HEALTH
-        end
-    end)
+    -- Se ainda não conectou o listener de vida
+    if not healthListenerConnected then
+        healthListenerConnected = true
+        humanoid:GetPropertyChangedSignal("Health"):Connect(function()
+            if godmodeEnabled and humanoid.Health < GOD_HEALTH then
+                humanoid.Health = GOD_HEALTH
+            end
+        end)
+    end
 end
 
--- Quando o personagem troca
+
+-- Proteção contra morte e destruição do humanoid
+task.spawn(function()
+    while true do
+        if godmodeEnabled and character then
+            -- Espera até o humanoid reaparecer naturalmente após respawn
+            if not humanoid or not humanoid.Parent then
+                humanoid = character:FindFirstChildOfClass("Humanoid")
+            end
+
+            if humanoid:GetState() == Enum.HumanoidStateType.Dead then
+                humanoid:ChangeState(Enum.HumanoidStateType.Running)
+                humanoid.Health = GOD_HEALTH
+            end
+        end
+        task.wait(0.1)
+    end
+end)
+
+-- Quando o personagem é adicionado
 local function onCharacterAdded(char)
     character = char
     humanoid = nil
+    healthListenerConnected = false
 
     local try = 0
     repeat
@@ -777,13 +849,13 @@ local function onCharacterAdded(char)
     end
 end
 
--- Detecta nova aparição do personagem
+-- Detecta respawn
 LocalPlayer.CharacterAdded:Connect(onCharacterAdded)
 if LocalPlayer.Character then
     onCharacterAdded(LocalPlayer.Character)
 end
 
--- Reforça o godmode a cada frame
+-- Atualização por frame (reforço constante)
 RunService.RenderStepped:Connect(function()
     if godmodeEnabled and humanoid then
         if humanoid.Health < GOD_HEALTH then
@@ -792,7 +864,7 @@ RunService.RenderStepped:Connect(function()
     end
 end)
 
--- Toggle no painel admin
+-- Toggle no painel admin (caso esteja usando UI de exploit)
 scripts:AddToggle({
     Name = "🛡️ GodMode (Imortal)",
     Default = true,
@@ -803,14 +875,12 @@ scripts:AddToggle({
         if state and humanoid then
             applyGodmode()
         elseif not state and humanoid then
-            -- Desativa godmode, volta ao normal
             humanoid:SetStateEnabled(Enum.HumanoidStateType.Dead, true)
             humanoid.MaxHealth = 100
             humanoid.Health = 100
         end
     end
 })
-
 
 -- TELEPORTE Players (otimizado)
 local teleportTarget = nil
@@ -910,3 +980,4 @@ game.Players.PlayerRemoving:Connect(function()
 end)
 
 OrionLib:Init()
+print("Tudo carregado")
