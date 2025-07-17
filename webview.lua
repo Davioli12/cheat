@@ -205,16 +205,29 @@ end
 local ValueConverter = {}
 
 function ValueConverter:convertColor(value)
+    if not value or value == "" then
+        return CONFIG.defaultBackgroundColor
+    end
+    
     -- Converter cores CSS para Color3
     if value:match("^#") then
         local hex = value:sub(2)
-        local r = tonumber(hex:sub(1, 2), 16) / 255
-        local g = tonumber(hex:sub(3, 4), 16) / 255
-        local b = tonumber(hex:sub(5, 6), 16) / 255
-        return Color3.fromRGB(r * 255, g * 255, b * 255)
+        if #hex == 6 then
+            local r = tonumber(hex:sub(1, 2), 16) or 0
+            local g = tonumber(hex:sub(3, 4), 16) or 0
+            local b = tonumber(hex:sub(5, 6), 16) or 0
+            return Color3.fromRGB(r, g, b)
+        elseif #hex == 3 then
+            local r = tonumber(hex:sub(1, 1), 16) or 0
+            local g = tonumber(hex:sub(2, 2), 16) or 0
+            local b = tonumber(hex:sub(3, 3), 16) or 0
+            return Color3.fromRGB(r * 17, g * 17, b * 17)
+        end
     elseif value:match("^rgb") then
         local r, g, b = value:match("rgb%((%d+),%s*(%d+),%s*(%d+)%)")
-        return Color3.fromRGB(tonumber(r), tonumber(g), tonumber(b))
+        if r and g and b then
+            return Color3.fromRGB(tonumber(r) or 0, tonumber(g) or 0, tonumber(b) or 0)
+        end
     else
         -- Cores nomeadas básicas
         local colors = {
@@ -224,22 +237,32 @@ function ValueConverter:convertColor(value)
             ["white"] = Color3.fromRGB(255, 255, 255),
             ["black"] = Color3.fromRGB(0, 0, 0),
             ["gray"] = Color3.fromRGB(128, 128, 128),
+            ["grey"] = Color3.fromRGB(128, 128, 128),
             ["yellow"] = Color3.fromRGB(255, 255, 0),
             ["orange"] = Color3.fromRGB(255, 165, 0),
             ["purple"] = Color3.fromRGB(128, 0, 128),
-            ["pink"] = Color3.fromRGB(255, 192, 203)
+            ["pink"] = Color3.fromRGB(255, 192, 203),
+            ["transparent"] = Color3.fromRGB(255, 255, 255)
         }
         return colors[value:lower()] or CONFIG.defaultBackgroundColor
     end
+    
+    return CONFIG.defaultBackgroundColor
 end
 
 function ValueConverter:convertSize(value, parent)
+    if not value or value == "" then
+        return 0
+    end
+    
+    value = tostring(value)
+    
     if value:match("%%$") then
         local percent = tonumber(value:match("(%d+)%%"))
-        return percent / 100
+        return (percent or 0) / 100
     elseif value:match("px$") then
         local pixels = tonumber(value:match("(%d+)px"))
-        return pixels
+        return pixels or 0
     elseif value == "auto" then
         return 0
     else
@@ -248,12 +271,18 @@ function ValueConverter:convertSize(value, parent)
 end
 
 function ValueConverter:convertPosition(value)
+    if not value or value == "" then
+        return UDim.new(0, 0)
+    end
+    
+    value = tostring(value)
+    
     if value:match("%%$") then
         local percent = tonumber(value:match("(%d+)%%"))
-        return UDim.new(percent / 100, 0)
+        return UDim.new((percent or 0) / 100, 0)
     elseif value:match("px$") then
         local pixels = tonumber(value:match("(%d+)px"))
-        return UDim.new(0, pixels)
+        return UDim.new(0, pixels or 0)
     else
         return UDim.new(0, tonumber(value) or 0)
     end
