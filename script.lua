@@ -1,5 +1,5 @@
 -- Detectar plataforma
-local platform = UserInputService.TouchEnabled and "Mobile" or "PC"
+--local platform = UserInputService.TouchEnabled and "Mobile" or "PC"
 
 -- Função para carregar script remoto
 local function loadRemoteScript(url)
