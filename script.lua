@@ -1,5 +1,7 @@
--- Detectar plataforma
---local platform = UserInputService.TouchEnabled and "Mobile" or "PC"
+-- Serviços
+local Players = game:GetService("Players")
+local UserInputService = game:GetService("UserInputService")
+local StarterGui = game:GetService("StarterGui")
 
 -- Função para carregar script remoto
 local function loadRemoteScript(url)
@@ -11,16 +13,11 @@ local function loadRemoteScript(url)
     end
 end
 
--- Serviços
-local Players = game:GetService("Players")
-local UserInputService = game:GetService("UserInputService")
-local StarterGui = game:GetService("StarterGui")
-
 -- Esperar o jogador local estar pronto
 local player = Players.LocalPlayer
 repeat task.wait() until player
 
--- Detectar e executar o script correspondente
+-- Detectar dispositivo
 if UserInputService.TouchEnabled then
     -- MOBILE
     StarterGui:SetCore("SendNotification", {
@@ -29,7 +26,6 @@ if UserInputService.TouchEnabled then
         Duration = 5
     })
 
-    -- Executar script mobile
     loadRemoteScript("https://raw.githubusercontent.com/Davioli12/cheat/refs/heads/main/mobile.lua")
 else
     -- PC
