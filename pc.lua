@@ -439,7 +439,7 @@ local turboKeyCode = Enum.KeyCode.F
 vehicleTab:AddSlider({
     Name = "Multiplicador (milésimos)",
     Min = 0,
-    Max = 50,
+    Max = 500,
     Default = 25,
     Increment = 1,
     Callback = function(v)
@@ -503,45 +503,89 @@ vehicleTab:AddBind({
     end
 })
 
--- Slider para controlar força
-scripts:AddSlider({
-    Name = "⚙️ Multiplicador Turbo",
-    Min = 1,
-    Max = 100,
-    Default = 2,
-    Increment = 0.1,
-    Flag = "turbo_slider",
-    Callback = function(value)
-        turboMultiplier = value
-    end
-})
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
 
--- Toggle para ativar/desativar o turbo
-scripts:AddToggle({
-    Name = "🚀 Turbo Ativado",
-    Default = true,
-    Save = true,
-    Flag = "turbo_toggle",
-    Callback = function(state)
-        turboEnabled = state
-        if not state then
-            -- Resetar valores se desligar turbo
-            if currentSeat and originalTorque then
-                currentSeat.Torque = originalTorque
-            end
-            if bodyVelocity and originalVelocity then
-                bodyVelocity.Velocity = originalVelocity
-            end
-            if vectorForce and originalForce then
-                vectorForce.Force = originalForce
-            end
-            if linearVelocity and originalLV then
-                linearVelocity.VectorVelocity = originalLV
-            end
+local LocalPlayer = Players.LocalPlayer
+local humanoid = nil
+local character = nil
+local baseWalkSpeed = 16 -- padrão da maioria dos jogos
+local currentSpeedValue = 0
+
+-- Força a velocidade no humanoid
+local function forceSpeed(h, value)
+    if not h then return end
+
+    -- Tenta setar diretamente
+    pcall(function()
+        h.WalkSpeed = value
+    end)
+
+    -- Alguns jogos usam atributos personalizados
+    pcall(function()
+        if h:GetAttribute("WalkSpeed") then
+            h:SetAttribute("WalkSpeed", value)
+        end
+    end)
+end
+
+-- Aplica a velocidade final somando com o valor do slider
+local function applySpeed()
+    if not humanoid then return end
+
+    local finalSpeed = math.clamp(baseWalkSpeed + currentSpeedValue, 0, 1000)
+    forceSpeed(humanoid, finalSpeed)
+end
+
+-- Quando o personagem for adicionado
+local function onCharacterAdded(char)
+    character = char
+    humanoid = nil
+
+    -- Espera o Humanoid aparecer
+    for _ = 1, 20 do
+        humanoid = char:FindFirstChildOfClass("Humanoid")
+        if humanoid then break end
+        task.wait(0.2)
+    end
+
+    if humanoid then
+        -- Salva o valor base apenas uma vez
+        baseWalkSpeed = humanoid.WalkSpeed > 0 and humanoid.WalkSpeed or 16
+        applySpeed()
+    end
+end
+
+-- Conecta eventos de personagem
+LocalPlayer.CharacterAdded:Connect(onCharacterAdded)
+if LocalPlayer.Character then
+    onCharacterAdded(LocalPlayer.Character)
+end
+
+-- Apenas atualiza se mudar
+local lastAppliedSpeed = -1
+RunService.RenderStepped:Connect(function()
+    if humanoid then
+        local expected = math.clamp(baseWalkSpeed + currentSpeedValue, 0, 1000)
+        if math.abs(humanoid.WalkSpeed - expected) > 0.1 then
+            applySpeed()
         end
     end
-})
+end)
 
+-- Slider UI
+scripts:AddSlider({
+    Name = "🏃 Velocidade Extra",
+    Min = 0,
+    Max = 600,
+    Default = 0,
+    Save = true,
+    Flag = "speed_slider",
+    Callback = function(value)
+        currentSpeedValue = value
+        applySpeed()
+    end
+})
 
 -- Aimbot hub
 -- Função principal do Aimbot
